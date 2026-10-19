@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NPM Site Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  :root {
+    --navy: #0d1940;
+    --navy-soft: #4c5c85;
+    --paper: #ffffff;
+    --panel: #f7f7f8;
+    --line: #e5e5ea;
+    --muted: #6b7280;
+    --gutter: max(20px, 4vw);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--navy); }
+  body { font-family: 'Rubik', Arial, Helvetica, sans-serif; font-weight: 400; }
+  h1, h2, h3 { font-family: 'Rubik', Arial, Helvetica, sans-serif; font-weight: 700; margin: 0; }
+
+  /* ---- Password gate ---- */
+  #gate {
+    position: fixed; inset: 0; background: var(--navy); color: #fff;
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+    padding: var(--gutter);
+  }
+  #gate .box { width: 100%; max-width: 360px; text-align: center; }
+  #gate h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+  #gate p { color: rgba(255,255,255,0.7); font-size: 0.85rem; margin: 0 0 1.25rem; }
+  #gate input {
+    width: 100%; padding: 0.7rem 0.9rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; font-size: 0.95rem; margin-bottom: 0.75rem;
+  }
+  #gate input::placeholder { color: rgba(255,255,255,0.45); }
+  #gate button {
+    width: 100%; padding: 0.7rem 0.9rem; border-radius: 8px; border: none;
+    background: #fff; color: var(--navy); font-family: inherit; font-weight: 600; font-size: 0.95rem; cursor: pointer;
+  }
+  #gate .err { color: #ffb4b4; font-size: 0.8rem; margin-top: 0.6rem; min-height: 1.1em; }
+  #app { display: none; }
+
+  header.topbar {
+    background: var(--navy); color: #fff;
+    padding: 1.1rem var(--gutter);
+  }
+  header.topbar .inner { max-width: 1120px; margin: 0 auto; display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  header.topbar h1 { font-size: 1.15rem; letter-spacing: 0.01em; }
+  header.topbar .tag { font-size: 0.78rem; color: rgba(255,255,255,0.65); }
+
+  main { max-width: 1120px; margin: 0 auto; padding: 1.75rem var(--gutter) 3rem; display: flex; flex-direction: column; gap: 2rem; }
+
+  .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.7rem; }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem;
+    display: flex; flex-direction: column; gap: 0.6rem;
+  }
+  .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .card-site { font-weight: 600; font-size: 0.9rem; }
+  .card-date { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 1rem; }
+  .stat-label { color: var(--muted); font-size: 0.72rem; margin: 0 0 0.15rem; }
+  .stat-value { font-weight: 700; font-size: 1.35rem; font-variant-numeric: tabular-nums; margin: 0; }
+
+  .chart-card, .table-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem;
+    display: flex; flex-direction: column; gap: 0.6rem; min-width: 0;
+  }
+  .card-head h3 { font-size: 0.95rem; margin: 0 0 0.2rem; }
+  .card-note { color: var(--muted); font-size: 0.75rem; margin: 0; }
+  .chart-box { min-height: 220px; width: 100%; position: relative; }
+  .chart-box svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
+
+  .tooltip {
+    position: absolute; background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(13,25,64,0.12); padding: 0.3rem 0.55rem; font-size: 0.75rem;
+    pointer-events: none; white-space: nowrap; z-index: 5;
+  }
+  .tooltip-row { display: flex; align-items: center; gap: 0.35rem; }
+  .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+  footer { color: var(--muted); font-size: 0.78rem; padding: 0 var(--gutter) 2rem; max-width: 1120px; margin: 0 auto; }
+
+  @media (max-width: 480px) {
+    header.topbar h1 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="box">
+    <h1>NPM Site Analytics</h1>
+    <p>This dashboard is password protected.</p>
+    <input id="gate-input" type="password" placeholder="Password" autocomplete="off">
+    <button id="gate-submit">Unlock</button>
+    <div class="err" id="gate-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="topbar">
+    <div class="inner">
+      <h1>NPM Site Analytics</h1>
+      <span class="tag">northpointministries.org &amp; /update &middot; updated manually from GA4</span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-title">Latest snapshot</div>
+      <div class="card-grid" id="site-cards"></div>
+    </section>
+
+    <section>
+      <div class="section-title">Views over time</div>
+      <div class="chart-card">
+        <div class="card-head">
+          <h3>Daily pageviews by site</h3>
+          <p class="card-note">Each group is one day. Add another export and a new bar appears here.</p>
+        </div>
+        <div class="chart-box" id="trend-chart"></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Traffic channels</div>
+      <div class="two-col" id="channel-charts"></div>
+    </section>
+
+    <section>
+      <div class="section-title">Hourly pageviews: / vs /update</div>
+      <div class="chart-card">
+        <div class="card-head">
+          <h3>Pageviews by hour</h3>
+          <p class="card-note">One line per page, on an evenly-spaced vertical axis.</p>
+        </div>
+        <div class="chart-box" id="hourly-line"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Data is refreshed manually from GA4 exports &mdash; this page is never connected to GA4 directly. This is a static snapshot; request a new export to refresh it.
+  </footer>
+</div>
+
+<script>
+const DATA = {"traffic_overview": [{"site": "northpointministries.org", "date": "2026-10-18", "views": 2587, "active_users_approx": 1717, "avg_engagement_sec": 8.9, "events": 8058}, {"site": "northpointministries.org/update", "date": "2026-10-18", "views": 36382, "active_users_approx": 31295, "avg_engagement_sec": 55.6, "events": 107629}], "channel_breakdown": [{"site": "northpointministries.org", "date": "2026-10-18", "channel": "Direct", "views": 1260, "active_users_approx": 751}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Organic Search", "views": 1137, "active_users_approx": 731}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Email", "views": 55, "active_users_approx": 32}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Social - Facebook", "views": 45, "active_users_approx": 25}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Social - Twitter/X", "views": 28, "active_users_approx": 19}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Social - Linktree / Link-in-bio", "views": 22, "active_users_approx": 15}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Referral (Other Sites)", "views": 19, "active_users_approx": 13}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Social - Instagram", "views": 13, "active_users_approx": 6}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "AI Assistant", "views": 3, "active_users_approx": 3}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Internal Redirect", "views": 3, "active_users_approx": 2}, {"site": "northpointministries.org", "date": "2026-10-18", "channel": "Unknown", "views": 2, "active_users_approx": 11}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Social - Facebook", "views": 12766, "active_users_approx": 9940}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Direct", "views": 7593, "active_users_approx": 4261}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Social - Twitter/X", "views": 5396, "active_users_approx": 4238}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Social - Linktree / Link-in-bio", "views": 4867, "active_users_approx": 3945}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Email", "views": 2749, "active_users_approx": 1598}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Organic Search", "views": 1521, "active_users_approx": 892}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Social - Instagram", "views": 1199, "active_users_approx": 940}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Internal Redirect", "views": 174, "active_users_approx": 88}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Unknown", "views": 70, "active_users_approx": 112}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "AI Assistant", "views": 22, "active_users_approx": 18}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Social - ManyChat", "views": 14, "active_users_approx": 7}, {"site": "northpointministries.org/update", "date": "2026-10-18", "channel": "Referral (Other Sites)", "views": 11, "active_users_approx": 6}], "hourly_by_page": [{"page": "/", "date": "2026-10-18", "hour": 0, "views": 2, "active_users_approx": 2, "avg_engagement_sec": 11.5, "events": 8}, {"page": "/", "date": "2026-10-18", "hour": 4, "views": 6, "active_users_approx": 3, "avg_engagement_sec": 3.7, "events": 13}, {"page": "/", "date": "2026-10-18", "hour": 5, "views": 9, "active_users_approx": 5, "avg_engagement_sec": 9.6, "events": 27}, {"page": "/", "date": "2026-10-18", "hour": 6, "views": 4, "active_users_approx": 3, "avg_engagement_sec": 30.0, "events": 14}, {"page": "/", "date": "2026-10-18", "hour": 7, "views": 9, "active_users_approx": 4, "avg_engagement_sec": 22.8, "events": 22}, {"page": "/", "date": "2026-10-18", "hour": 8, "views": 17, "active_users_approx": 10, "avg_engagement_sec": 25.2, "events": 53}, {"page": "/", "date": "2026-10-18", "hour": 9, "views": 49, "active_users_approx": 29, "avg_engagement_sec": 12.1, "events": 156}, {"page": "/", "date": "2026-10-18", "hour": 10, "views": 36, "active_users_approx": 24, "avg_engagement_sec": 15.5, "events": 117}, {"page": "/", "date": "2026-10-18", "hour": 11, "views": 45, "active_users_approx": 29, "avg_engagement_sec": 17.0, "events": 145}, {"page": "/", "date": "2026-10-18", "hour": 12, "views": 37, "active_users_approx": 19, "avg_engagement_sec": 15.4, "events": 107}, {"page": "/", "date": "2026-10-18", "hour": 13, "views": 42, "active_users_approx": 25, "avg_engagement_sec": 16.5, "events": 131}, {"page": "/", "date": "2026-10-18", "hour": 14, "views": 769, "active_users_approx": 514, "avg_engagement_sec": 7.2, "events": 2526}, {"page": "/", "date": "2026-10-18", "hour": 15, "views": 588, "active_users_approx": 407, "avg_engagement_sec": 7.1, "events": 1919}, {"page": "/", "date": "2026-10-18", "hour": 16, "views": 450, "active_users_approx": 301, "avg_engagement_sec": 8.9, "events": 1310}, {"page": "/", "date": "2026-10-18", "hour": 17, "views": 292, "active_users_approx": 182, "avg_engagement_sec": 9.1, "events": 835}, {"page": "/", "date": "2026-10-18", "hour": 18, "views": 139, "active_users_approx": 94, "avg_engagement_sec": 14.7, "events": 423}, {"page": "/", "date": "2026-10-18", "hour": 19, "views": 63, "active_users_approx": 44, "avg_engagement_sec": 8.5, "events": 182}, {"page": "/", "date": "2026-10-18", "hour": 20, "views": 14, "active_users_approx": 11, "avg_engagement_sec": 4.6, "events": 34}, {"page": "/", "date": "2026-10-18", "hour": 21, "views": 9, "active_users_approx": 8, "avg_engagement_sec": 5.2, "events": 20}, {"page": "/", "date": "2026-10-18", "hour": 22, "views": 6, "active_users_approx": 2, "avg_engagement_sec": 13.0, "events": 12}, {"page": "/", "date": "2026-10-18", "hour": 23, "views": 1, "active_users_approx": 1, "avg_engagement_sec": 3.0, "events": 4}, {"page": "/update", "date": "2026-10-18", "hour": 6, "views": 1, "active_users_approx": 1, "avg_engagement_sec": 4.0, "events": 5}, {"page": "/update", "date": "2026-10-18", "hour": 7, "views": 2, "active_users_approx": 1, "avg_engagement_sec": 6.0, "events": 10}, {"page": "/update", "date": "2026-10-18", "hour": 9, "views": 2, "active_users_approx": 2, "avg_engagement_sec": 2.5, "events": 8}, {"page": "/update", "date": "2026-10-18", "hour": 10, "views": 10, "active_users_approx": 6, "avg_engagement_sec": 10.8, "events": 35}, {"page": "/update", "date": "2026-10-18", "hour": 11, "views": 7, "active_users_approx": 3, "avg_engagement_sec": 29.3, "events": 22}, {"page": "/update", "date": "2026-10-18", "hour": 13, "views": 19, "active_users_approx": 9, "avg_engagement_sec": 11.4, "events": 45}, {"page": "/update", "date": "2026-10-18", "hour": 14, "views": 5949, "active_users_approx": 4825, "avg_engagement_sec": 43.7, "events": 16870}, {"page": "/update", "date": "2026-10-18", "hour": 15, "views": 9311, "active_users_approx": 8011, "avg_engagement_sec": 56.6, "events": 28137}, {"page": "/update", "date": "2026-10-18", "hour": 16, "views": 7812, "active_users_approx": 6753, "avg_engagement_sec": 43.2, "events": 23526}, {"page": "/update", "date": "2026-10-18", "hour": 17, "views": 6370, "active_users_approx": 5444, "avg_engagement_sec": 49.1, "events": 19024}, {"page": "/update", "date": "2026-10-18", "hour": 18, "views": 3794, "active_users_approx": 3339, "avg_engagement_sec": 81.5, "events": 11188}, {"page": "/update", "date": "2026-10-18", "hour": 19, "views": 2079, "active_users_approx": 1905, "avg_engagement_sec": 103.9, "events": 6174}, {"page": "/update", "date": "2026-10-18", "hour": 20, "views": 565, "active_users_approx": 565, "avg_engagement_sec": 74.3, "events": 1499}, {"page": "/update", "date": "2026-10-18", "hour": 21, "views": 286, "active_users_approx": 253, "avg_engagement_sec": 40.6, "events": 659}, {"page": "/update", "date": "2026-10-18", "hour": 22, "views": 132, "active_users_approx": 129, "avg_engagement_sec": 29.9, "events": 313}, {"page": "/update", "date": "2026-10-18", "hour": 23, "views": 43, "active_users_approx": 49, "avg_engagement_sec": 62.8, "events": 114}]};
+const COLORS = ['#0d1940', '#8a93ad'];
+
+// ---- Password gate ----
+(function () {
+  const PASSWORD = 'redeploy27';
+  const gate = document.getElementById('gate');
+  const app = document.getElementById('app');
+  const input = document.getElementById('gate-input');
+  const submit = document.getElementById('gate-submit');
+  const err = document.getElementById('gate-err');
+
+  function unlock() {
+    gate.style.display = 'none';
+    app.style.display = 'block';
+    try { sessionStorage.setItem('npm_dash_unlocked', '1'); } catch (e) {}
+  }
+  function tryUnlock() {
+    if (input.value === PASSWORD) { unlock(); }
+    else { err.textContent = 'Incorrect password.'; }
+  }
+  submit.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+
+  try {
+    if (sessionStorage.getItem('npm_dash_unlocked') === '1') unlock();
+  } catch (e) {}
+})();
+
+// ---- Shared formatting ----
+const fmtCount = d3.format(',');
+const fmtCompact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+const fmtDate = (d) => d3.utcFormat('%b %-d')(new Date(d + 'T00:00:00Z'));
+const fmtSeconds = (s) => `${d3.format('.1f')(s)}s`;
+
+const SITES = ['northpointministries.org', 'northpointministries.org/update'];
+const siteColor = (site) => COLORS[SITES.indexOf(site) % COLORS.length] || COLORS[0];
+
+// ---- Headline cards ----
+function renderCards() {
+  const rows = DATA.traffic_overview;
+  const el = document.getElementById('site-cards');
+  el.innerHTML = SITES.map((site) => {
+    const r = rows.find((row) => row.site === site);
+    if (!r) return `<div class="card"><div class="card-top"><span class="card-site">${site}</span></div><p class="card-note">No data yet.</p></div>`;
+    return `
+      <div class="card">
+        <div class="card-top">
+          <span class="card-site">${site}</span>
+          <span class="card-date">${fmtDate(r.date)}</span>
+        </div>
+        <div class="stat-grid">
+          <div><p class="stat-label">Pageviews</p><p class="stat-value">${fmtCompact.format(r.views)}</p></div>
+          <div><p class="stat-label">Active users (approx.)</p><p class="stat-value">${fmtCompact.format(r.active_users_approx)}</p></div>
+          <div><p class="stat-label">Avg. engagement time</p><p class="stat-value">${fmtSeconds(r.avg_engagement_sec)}</p></div>
+          <div><p class="stat-label">Events</p><p class="stat-value">${fmtCompact.format(r.events)}</p></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ---- Trend chart ----
+function renderTrend() {
+  const box = document.getElementById('trend-chart');
+  box.innerHTML = '';
+  const rows = DATA.traffic_overview;
+  const dates = [...new Set(rows.map((r) => r.date))].sort();
+  const width = Math.max(box.clientWidth, 280);
+  const height = 220;
+  const margin = { top: 16, right: 16, bottom: 28, left: 48 };
+
+  const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
+
+  const x0 = d3.scaleBand().domain(dates).range([margin.left, width - margin.right]).padding(0.3);
+  const x1 = d3.scaleBand().domain(SITES).range([0, x0.bandwidth()]).padding(0.15);
+  const y = d3.scaleLinear().domain([0, d3.max(rows, (r) => r.views) * 1.15 || 1]).nice().range([height - margin.bottom, margin.top]);
+
+  svg.append('g').attr('stroke', '#e5e5ea').selectAll('line').data(y.ticks(4)).join('line')
+    .attr('x1', margin.left).attr('x2', width - margin.right).attr('y1', (v) => y(v)).attr('y2', (v) => y(v));
+
+  svg.append('g').attr('transform', `translate(0,${height - margin.bottom})`)
+    .call(d3.axisBottom(x0).tickFormat(fmtDate).tickSize(0))
+    .call((g) => g.select('.domain').attr('stroke', '#e5e5ea'))
+    .selectAll('text').attr('fill', '#6b7280').style('font-family', 'Rubik').style('font-size', '0.72rem');
+
+  svg.append('g').attr('transform', `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(4).tickFormat((v) => fmtCompact.format(v)).tickSize(0))
+    .call((g) => g.select('.domain').remove())
+    .selectAll('text').attr('fill', '#6b7280').style('font-family', 'Rubik').style('font-size', '0.72rem');
+
+  const tooltip = d3.select(box).append('div').attr('class', 'tooltip').style('display', 'none');
+
+  SITES.forEach((site) => {
+    const siteRows = rows.filter((r) => r.site === site);
+    svg.append('g').selectAll('rect').data(siteRows).join('rect')
+      .attr('x', (r) => x0(r.date) + x1(site)).attr('width', x1.bandwidth())
+      .attr('y', (r) => y(r.views)).attr('height', (r) => y(0) - y(r.views))
+      .attr('rx', 3).attr('fill', siteColor(site))
+      .on('mousemove', (event, r) => {
+        const [mx, my] = d3.pointer(event, box);
+        tooltip.style('display', 'block').style('left', `${mx + 10}px`).style('top', `${my - 10}px`)
+          .html(`<div class="tooltip-row" style="color:#6b7280">${fmtDate(r.date)}</div><div class="tooltip-row"><span class="swatch" style="background:${siteColor(site)}"></span>${site}: ${fmtCount(r.views)}</div>`);
+      })
+      .on('mouseleave', () => tooltip.style('display', 'none'));
+  });
+
+  const legend = d3.select(box).append('div').style('display', 'flex').style('gap', '1rem').style('margin-top', '0.4rem')
+    .style('font-size', '0.75rem').style('color', '#6b7280');
+  SITES.forEach((site) => {
+    const item = legend.append('div').style('display', 'flex').style('align-items', 'center').style('gap', '0.35rem');
+    item.append('span').attr('class', 'swatch').style('background', siteColor(site)).style('display', 'inline-block');
+    item.append('span').text(site);
+  });
+}
+
+// ---- Channel breakdown ----
+function renderChannels() {
+  const wrap = document.getElementById('channel-charts');
+  const rows = DATA.channel_breakdown;
+  wrap.innerHTML = SITES.map((site) => `
+    <div class="chart-card">
+      <div class="card-head"><h3>${site}</h3><p class="card-note">Pageviews by traffic channel.</p></div>
+      <div class="chart-box" id="ch-${SITES.indexOf(site)}"></div>
+    </div>`).join('');
+
+  SITES.forEach((site, i) => {
+    const box = document.getElementById(`ch-${i}`);
+    const siteRows = rows.filter((r) => r.site === site).sort((a, b) => b.views - a.views);
+    if (!siteRows.length) { box.innerHTML = '<p class="card-note">No channel data yet.</p>'; return; }
+    const width = Math.max(box.clientWidth, 260);
+    const barH = 24, gap = 9;
+    const margin = { top: 4, right: 48, bottom: 4, left: 160 };
+    const height = siteRows.length * (barH + gap) + margin.top + margin.bottom;
+    const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
+    const x = d3.scaleLinear().domain([0, d3.max(siteRows, (r) => r.views) * 1.1]).range([margin.left, width - margin.right]);
+    const color = siteColor(site);
+
+    const row = svg.selectAll('g.ch-row').data(siteRows).join('g').attr('class', 'ch-row')
+      .attr('transform', (r, idx) => `translate(0,${margin.top + idx * (barH + gap)})`);
+
+    row.append('text').attr('x', margin.left - 10).attr('y', barH / 2).attr('dy', '0.35em').attr('text-anchor', 'end')
+      .style('font-family', 'Rubik').style('font-size', '0.76rem').attr('fill', '#0d1940').text((r) => r.channel);
+    row.append('rect').attr('x', margin.left).attr('y', 0).attr('width', (r) => x(r.views) - margin.left).attr('height', barH).attr('rx', 4).attr('fill', color);
+    row.append('text').attr('x', (r) => x(r.views) + 6).attr('y', barH / 2).attr('dy', '0.35em')
+      .style('font-family', 'Rubik').style('font-size', '0.76rem').attr('fill', '#6b7280').text((r) => fmtCount(r.views));
+  });
+}
+
+// ---- Hourly line chart ----
+function renderHourly() {
+  const box = document.getElementById('hourly-line');
+  box.innerHTML = '';
+  const PAGES = ['/', '/update'];
+  const pageColor = (p) => COLORS[PAGES.indexOf(p) % COLORS.length] || COLORS[0];
+  const rows = DATA.hourly_by_page;
+  const dates = [...new Set(rows.map((r) => r.date))].sort();
+  const date = dates[dates.length - 1];
+  const dayRows = rows.filter((r) => r.date === date);
+  const hours = d3.range(0, 24);
+
+  const byPage = {};
+  PAGES.forEach((p) => {
+    const byHour = {};
+    dayRows.filter((r) => r.page === p).forEach((r) => { byHour[r.hour] = r; });
+    byPage[p] = hours.map((h) => byHour[h] || { page: p, date, hour: h, views: 0 });
+  });
+
+  const width = Math.max(box.clientWidth, 320);
+  const height = 260;
+  const margin = { top: 16, right: 16, bottom: 28, left: 48 };
+  const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
+
+  const x = d3.scaleLinear().domain([0, 23]).range([margin.left, width - margin.right]);
+  const maxViews = d3.max(dayRows, (r) => r.views) || 1;
+  const y = d3.scaleLinear().domain([0, maxViews]).nice().range([height - margin.bottom, margin.top]);
+
+  svg.append('g').attr('stroke', '#e5e5ea').selectAll('line').data(y.ticks(5)).join('line')
+    .attr('x1', margin.left).attr('x2', width - margin.right).attr('y1', (v) => y(v)).attr('y2', (v) => y(v));
+
+  svg.append('g').attr('transform', `translate(0,${height - margin.bottom})`)
+    .call(d3.axisBottom(x).tickValues(hours.filter((h) => h % 3 === 0)).tickFormat((h) => `${h}:00`).tickSize(0))
+    .call((g) => g.select('.domain').attr('stroke', '#e5e5ea'))
+    .selectAll('text').attr('fill', '#6b7280').style('font-family', 'Rubik').style('font-size', '0.72rem');
+
+  svg.append('g').attr('transform', `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickFormat((v) => fmtCompact.format(v)).tickSize(0))
+    .call((g) => g.select('.domain').remove())
+    .selectAll('text').attr('fill', '#6b7280').style('font-family', 'Rubik').style('font-size', '0.72rem');
+
+  const line = d3.line().x((r) => x(r.hour)).y((r) => y(r.views)).curve(d3.curveMonotoneX);
+  box.style.position = 'relative';
+  const tooltip = d3.select(box).append('div').attr('class', 'tooltip').style('display', 'none');
+
+  PAGES.forEach((page) => {
+    const series = byPage[page];
+    const color = pageColor(page);
+    svg.append('path').datum(series).attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('d', line);
+    svg.append('g').selectAll('circle').data(series).join('circle')
+      .attr('cx', (r) => x(r.hour)).attr('cy', (r) => y(r.views)).attr('r', 3).attr('fill', color)
+      .on('mousemove', (event, r) => {
+        const [mx, my] = d3.pointer(event, box);
+        tooltip.style('display', 'block').style('left', `${mx + 10}px`).style('top', `${my - 10}px`)
+          .html(`<div class="tooltip-row" style="color:#6b7280">${r.page} &middot; ${r.hour}:00</div><div class="tooltip-row"><span class="swatch" style="background:${color}"></span>${fmtCount(r.views)} views</div>`);
+      })
+      .on('mouseleave', () => tooltip.style('display', 'none'));
+  });
+
+  const legend = d3.select(box).append('div').style('display', 'flex').style('gap', '1rem').style('margin-top', '0.4rem')
+    .style('font-size', '0.75rem').style('color', '#6b7280');
+  PAGES.forEach((page) => {
+    const item = legend.append('div').style('display', 'flex').style('align-items', 'center').style('gap', '0.35rem');
+    item.append('span').attr('class', 'swatch').style('background', pageColor(page)).style('display', 'inline-block');
+    item.append('span').text(page);
+  });
+}
+
+function renderAll() { renderCards(); renderTrend(); renderChannels(); renderHourly(); }
+renderAll();
+window.addEventListener('resize', renderAll);
+</script>
+</body>
+</html>
