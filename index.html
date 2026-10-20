@@ -440,25 +440,28 @@ function renderHourly() {
   const noteEl = document.getElementById("hourly-note");
   box.innerHTML = "";
   const pages = ["/", "/update"];
+  const isAll = selectedDate === "all";
+  const timelineDates = isAll ? allDates() : [selectedDate];
   const width = box.clientWidth || 900, height = 340;
   const margin = { top: 10, right: 20, bottom: 36, left: 64 };
   const svg = d3.select(box).append("svg").attr("viewBox", `0 0 ${width} ${height}`);
-  const hours = d3.range(0, 24);
-  const x = d3.scaleLinear().domain([0, 23]).range([margin.left, width - margin.right]);
 
-  if (selectedDate === "all") {
-    noteEl.textContent = `Even (linear) scale · summed across ${dateRangeLabel()}`;
+  // Sequential index: every (date, hour) pair laid out one after another.
+  const points = [];
+  timelineDates.forEach(d => { for (let h = 0; h < 24; h++) points.push({ date: d, hour: h }); });
+  const x = d3.scaleLinear().domain([0, points.length - 1]).range([margin.left, width - margin.right]);
+
+  if (isAll) {
+    noteEl.textContent = `Even (linear) scale · all ${points.length} hours, ${dateRangeLabel()}, laid out sequentially`;
   } else {
     noteEl.textContent = `Even (linear) scale · ${fmtDate(selectedDate)}`;
   }
 
   const series = pages.map(page => ({
     page,
-    values: hours.map(h => {
-      const rows = selectedDate === "all"
-        ? DATA.hourly.filter(r => r.page === page && r.hour === h)
-        : DATA.hourly.filter(r => r.page === page && r.date === selectedDate && r.hour === h);
-      return d3.sum(rows, r => r.views);
+    values: points.map(pt => {
+      const row = DATA.hourly.find(r => r.page === page && r.date === pt.date && r.hour === pt.hour);
+      return row ? row.views : 0;
     }),
   }));
   const maxV = d3.max(series, s => d3.max(s.values)) || 1;
@@ -467,9 +470,24 @@ function renderHourly() {
   svg.append("g").attr("class", "gridline")
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y).tickSize(-(width - margin.left - margin.right)).tickFormat("").ticks(5));
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x).ticks(12).tickFormat(h => `${h}:00`));
+
+  if (isAll) {
+    // Day-boundary gridlines + labels, instead of hour-of-day ticks.
+    svg.append("g").attr("class", "gridline")
+      .selectAll("line").data(timelineDates.map((d, i) => i * 24)).join("line")
+      .attr("x1", i => x(i)).attr("x2", i => x(i))
+      .attr("y1", margin.top).attr("y2", height - margin.bottom);
+    svg.append("g").attr("class", "axis")
+      .attr("transform", `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x)
+        .tickValues(timelineDates.map((d, i) => i * 24 + 12))
+        .tickFormat((d, i) => fmtDate(timelineDates[i]))
+        .tickSize(0));
+  } else {
+    svg.append("g").attr("class", "axis")
+      .attr("transform", `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x).ticks(12).tickFormat(h => `${h}:00`));
+  }
   svg.append("g").attr("class", "axis")
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y).ticks(5).tickFormat(fmtCompact));
@@ -482,11 +500,12 @@ function renderHourly() {
       .attr("stroke", PAGE_COLOR[s.page]).attr("stroke-width", 2.5).attr("d", line);
     svg.selectAll(`.pt-${s.page.replace("/", "")}`)
       .data(s.values).enter().append("circle")
-      .attr("cx", (d, i) => x(i)).attr("cy", d => y(d)).attr("r", 3)
+      .attr("cx", (d, i) => x(i)).attr("cy", d => y(d)).attr("r", isAll ? 2 : 3)
       .attr("fill", PAGE_COLOR[s.page])
       .on("mousemove", function (ev, d) {
         const i = s.values.indexOf(d);
-        showTip(`<b>${s.page}</b><br>${i}:00 — ${fmtCount(d)} views`, ev.pageX, ev.pageY);
+        const pt = points[i];
+        showTip(`<b>${s.page}</b><br>${fmtDate(pt.date)} ${pt.hour}:00 — ${fmtCount(d)} views`, ev.pageX, ev.pageY);
       })
       .on("mouseleave", hideTip);
   });
