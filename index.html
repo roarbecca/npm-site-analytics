@@ -59,9 +59,12 @@
   .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
     gap:16px; }
   .card { background:var(--card); border-radius:var(--radius); padding:22px; }
+  .card .card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; margin-bottom:14px; }
+  .card .card-top-label { min-width:0; }
   .card .card-site { font-size:14px; font-weight:700; color:var(--ink-2);
-    text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px; }
-  .card .card-date { font-size:12px; color:var(--ink-3); margin-bottom:14px; }
+    text-transform:uppercase; letter-spacing:.02em; overflow-wrap:anywhere; }
+  .card .card-domain { font-size:11px; color:var(--ink-3); margin-top:2px; overflow-wrap:anywhere; }
+  .card .card-date { font-size:12px; color:var(--ink-3); white-space:nowrap; flex-shrink:0; }
   .kpi-row { display:flex; flex-wrap:wrap; gap:18px 28px; }
   .kpi-value { font-size:34px; font-weight:700; line-height:1.1; }
   .kpi-label { font-size:12px; font-weight:700; color:var(--ink-3);
@@ -275,6 +278,15 @@ const DEVICE_COLORS = ["#004cfd","#119efe","#0d1940","#8893a8"];
 // same color across every device-breakdown card.
 const DEVICE_COLOR_MAP = { mobile: "#004cfd", desktop: "#119efe", tablet: "#0d1940", tv: "#8893a8" };
 const DEVICE_ORDER = ["mobile", "desktop", "tablet", "tv"];
+// Friendly short names for the Snapshot cards — the full domain still shows
+// underneath (smaller, muted) so the cards don't overflow on narrower widths.
+const SITE_LABELS = {
+  "northpointministries.org": "Homepage",
+  "northpointministries.org/update": "Leadership Update",
+  "npmi.org/vote/2037955": "Member Vote",
+  "npmi.org/vote/FAQ": "Member Vote FAQ",
+};
+const siteLabel = (site) => SITE_LABELS[site] || site;
 
 function fmtCount(n) { return Math.round(n).toLocaleString("en-US"); }
 function fmtCompact(n) {
@@ -367,8 +379,11 @@ function renderCards() {
       dateLabel = fmtDate(selectedDate);
     }
     const card = el.append("div").attr("class", "card");
-    card.append("div").attr("class", "card-site").text(site);
-    card.append("div").attr("class", "card-date").text(dateLabel);
+    const cardTop = card.append("div").attr("class", "card-top");
+    const cardTopLabel = cardTop.append("div").attr("class", "card-top-label");
+    cardTopLabel.append("div").attr("class", "card-site").text(siteLabel(site));
+    cardTopLabel.append("div").attr("class", "card-domain").text(site);
+    cardTop.append("div").attr("class", "card-date").text(dateLabel);
     const kpis = card.append("div").attr("class", "kpi-row");
     const stats = [
       ["Views", fmtCompact(row.views)],
