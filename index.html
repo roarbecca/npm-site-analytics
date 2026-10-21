@@ -95,6 +95,9 @@
   .legend-item.toggle.is-off { opacity:0.4; }
   .legend-item.toggle.is-off .legend-swatch { background:var(--neu) !important; }
   .legend-hint { font-size:11px; color:var(--ink-3); margin-top:4px; }
+  .see-all-btn { margin-top:10px; padding:6px 12px; border:1px solid var(--line); border-radius:6px;
+    background:var(--card); color:var(--ink-2); font-size:12px; font-family:inherit; cursor:pointer; }
+  .see-all-btn:hover { background:var(--panel-2, rgba(0,0,0,0.04)); }
 
   .tooltip { position:absolute; pointer-events:none; background:var(--navy); color:#fff;
     padding:8px 10px; border-radius:6px; font-size:12px; line-height:1.5; opacity:0;
@@ -317,6 +320,8 @@ function hideTip() { tooltip.style("opacity", 0); }
 
 let selectedDate = "all";
 let hiddenHourlyPages = new Set();
+let channelExpanded = new Set(); // sites currently showing all traffic sources, not just the top 10
+const CHANNEL_TOP_N = 10;
 
 function allDates() {
   return [...new Set(DATA.traffic.map(r => r.date))].sort();
@@ -467,8 +472,10 @@ function renderChannels() {
   }
 
   CHANNEL_SITES.forEach(site => {
-    const rows = DATA.channels.filter(r => r.site === site && r.date === effectiveDate).sort((a, b) => b.views - a.views);
-    if (!rows.length) return;
+    const allRows = DATA.channels.filter(r => r.site === site && r.date === effectiveDate).sort((a, b) => b.views - a.views);
+    if (!allRows.length) return;
+    const isExpanded = channelExpanded.has(site);
+    const rows = isExpanded ? allRows : allRows.slice(0, CHANNEL_TOP_N);
     const card = el.append("div").attr("class", "chart-card");
     card.append("div").attr("class", "card-head").append("h3").text(site);
     const box = card.append("div").attr("class", "chart-box").node();
@@ -490,6 +497,15 @@ function renderChannels() {
       svg.append("text").attr("x", x(r.views) + 8).attr("y", yy + barH / 2 + 4)
         .attr("font-size", 12).attr("fill", "var(--navy)").attr("font-weight", 700).text(fmtCompact(r.views));
     });
+    if (allRows.length > CHANNEL_TOP_N) {
+      card.append("button").attr("class", "see-all-btn")
+        .text(isExpanded ? "Show top 10 only" : `See all ${allRows.length} sources`)
+        .on("click", () => {
+          if (isExpanded) channelExpanded.delete(site);
+          else channelExpanded.add(site);
+          renderChannels();
+        });
+    }
   });
 }
 
