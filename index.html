@@ -418,14 +418,15 @@ function renderCards() {
 function renderTrend() {
   const box = document.getElementById("trend-chart");
   box.innerHTML = "";
-  const dates = [...new Set(DATA.traffic.map(r => r.date))].sort();
+  const trendRows = DATA.traffic.filter(r => r.date !== "all");
+  const dates = [...new Set(trendRows.map(r => r.date))].sort();
   const width = box.clientWidth || 600, height = 320;
   const margin = { top: 10, right: 20, bottom: 36, left: 56 };
   const svg = d3.select(box).append("svg")
     .attr("viewBox", `0 0 ${width} ${height}`);
   const x0 = d3.scaleBand().domain(dates).range([margin.left, width - margin.right]).padding(0.3);
   const x1 = d3.scaleBand().domain(SITES).range([0, x0.bandwidth()]).padding(0.15);
-  const maxV = d3.max(DATA.traffic, d => d.views) || 1;
+  const maxV = d3.max(trendRows, d => d.views) || 1;
   const y = d3.scaleLinear().domain([0, maxV * 1.1]).range([height - margin.bottom, margin.top]);
 
   svg.append("g").attr("class", "gridline")
@@ -440,7 +441,7 @@ function renderTrend() {
 
   dates.forEach(date => {
     SITES.forEach(site => {
-      const row = DATA.traffic.find(r => r.date === date && r.site === site);
+      const row = trendRows.find(r => r.date === date && r.site === site);
       if (!row) return;
       svg.append("rect")
         .attr("x", x0(date) + x1(site)).attr("y", y(row.views))
